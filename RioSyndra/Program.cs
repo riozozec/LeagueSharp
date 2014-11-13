@@ -390,18 +390,18 @@ namespace RioSyndra
         {
             if (!Q.IsReady() || !E.IsReady()) return;
             Vector3 SPos = Prediction.GetPrediction(Target, 0.53f).UnitPosition;
-            if (Player.Distance(SPos, true) >= Math.Pow(700, 2))
+            if (Player.Distance(SPos, true) > Math.Pow(700, 2))
             {
                 EQ.Delay = 0.53f;
                 EQ.From = Player.ServerPosition + Vector3.Normalize(Target.ServerPosition - Player.ServerPosition) * 700;
                 var TPos = EQ.GetPrediction(Target);
-                if (TPos.Hitchance >= HitChance.Medium)
+                if (TPos.Hitchance >= HitChance.High)
                 {
                     Vector3 Pos = Player.ServerPosition + Vector3.Normalize(TPos.UnitPosition - Player.ServerPosition) * 700;
                     UseEQ2(Target, Pos);
                 }
             }
-            else if (Player.Distance(SPos, true) >= 90 * 90)
+            else if (Player.Distance(SPos, true) > 90 * 90)
             {
                 Q.Width = 60f;
                 var TPos = Q.GetPrediction(Target);
@@ -413,6 +413,7 @@ namespace RioSyndra
             }
             else
             {
+                Q.Width = 60f;
                 var Pos = Q.GetPrediction(Target);
                 if (Pos.Hitchance >= HitChance.High)
                 {
@@ -427,21 +428,17 @@ namespace RioSyndra
         {
             if (Player.Distance(Pos, true) <= Math.Pow(E.Range, 2))
             {
-                Vector2 SP = Pos.To2D() + Vector2.Normalize(Player.ServerPosition.To2D() - Pos.To2D()) * 100f;
-                Vector2 EP = Pos.To2D() + Vector2.Normalize(Pos.To2D() - Player.ServerPosition.To2D()) * 592;
+                Vector3 SP = Pos + Vector3.Normalize(Player.ServerPosition - Pos) * 100f;
+                Vector3 EP = Pos + Vector3.Normalize(Pos - Player.ServerPosition) * 592;
                 EQ.Delay = E.Delay + Player.ServerPosition.Distance(Pos) / E.Speed;
                 EQ.UpdateSourcePosition(Pos);
-                var PPo = EQ.GetPrediction(Target).UnitPosition.To2D();
-                if (PPo.Distance(SP, EP, true, true) <= Math.Pow(EQ.Width + Target.BoundingRadius, 2))
+                var PPo = EQ.GetPrediction(Target).UnitPosition.To2D().ProjectOn(SP.To2D(), EP.To2D());
+                if (PPo.IsOnSegment && PPo.SegmentPoint.Distance(Target, true) <= Math.Pow(EQ.Width + Target.BoundingRadius, 2))
                 {
-                    Q.Cast(Pos, true);
+                    int Delay = 280 - (int)(Player.Distance(Pos) / 2.5) * 1000 + Menu.Item("EQDelay").GetValue<Slider>().Value;
+                    Utility.DelayAction.Add(Math.Max(0, Delay), () => E.Cast(Pos, true));
                     EQ.LastCastAttemptT = Environment.TickCount;
-                    int Delay = 280 - (int)(Player.Distance(Pos) / 2.5) + Environment.TickCount + Menu.Item("EQDelay").GetValue<Slider>().Value;
-                    while (Delay > Environment.TickCount)
-                    {
-                        ;
-                    }
-                    E.Cast(Pos, true);
+                    Q.Cast(Pos, true);
                 }
             }
         }
