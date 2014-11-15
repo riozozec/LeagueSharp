@@ -26,34 +26,9 @@ namespace RioSyndra
             }
         }
 
-        public static int tmpQOrbT;
-        public static Vector3 tmpQOrbPos = new Vector3();
-
-        public static int tmpWOrbT;
-        public static Vector3 tmpWOrbPos = new Vector3();
-
-        public static bool ActiveRecv = false;
-        public static Byte Activebyte = 0x00;
-
         static OrbManager()
         {
             Game.OnGameProcessPacket += Game_OnGameProcessPacket;
-            Obj_AI_Base.OnProcessSpellCast += Obj_AI_Hero_OnProcessSpellCast;
-        }
-
-        private static void Obj_AI_Hero_OnProcessSpellCast(Obj_AI_Base sender, GameObjectProcessSpellCastEventArgs args)
-        {
-            if (sender.IsMe && args.SData.Name == "SyndraQ")
-            {
-                tmpQOrbT = Environment.TickCount;
-                tmpQOrbPos = args.End;
-            }
-
-            if (sender.IsMe && WObject(true) != null && (args.SData.Name == "SyndraW" || args.SData.Name == "syndraw2"))
-            {
-                tmpWOrbT = Environment.TickCount + 250;
-                tmpWOrbPos = args.End;
-            }
         }
 
         public static Obj_AI_Minion WObject(bool onlyOrb)
@@ -96,17 +71,6 @@ namespace RioSyndra
                 if (valid && (!toGrab || !obj.IsMoving))
                     result.Add(obj.ServerPosition);
             }
-
-            if (Environment.TickCount - tmpQOrbT < 400)
-            {
-                result.Add(tmpQOrbPos);
-            }
-
-            if (Environment.TickCount - tmpWOrbT < 400 && Environment.TickCount - tmpWOrbT > 0)
-            {
-                result.Add(tmpWOrbPos);
-            }
-
             return result;
         }
 

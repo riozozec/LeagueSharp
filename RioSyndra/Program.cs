@@ -80,10 +80,10 @@ namespace RioSyndra
             //Harass
             Menu.AddSubMenu(new Menu("Harass", "Harass"));
             Menu.SubMenu("Harass").AddItem(new MenuItem("UseQH", "Use Q").SetValue(true));
+            Menu.SubMenu("Harass").AddItem(new MenuItem("HarassAAQ", "Harass enemy AA by Q").SetValue(false));
             Menu.SubMenu("Harass").AddItem(new MenuItem("UseWH", "Use W").SetValue(false));
             Menu.SubMenu("Harass").AddItem(new MenuItem("UseEH", "Use E").SetValue(false));
             Menu.SubMenu("Harass").AddItem(new MenuItem("UseEQH", "Use EQ").SetValue(false));
-            Menu.SubMenu("Harass").AddItem(new MenuItem("HarassAA", "Harass enemy AA").SetValue(true));
             Menu.SubMenu("Harass").AddItem(new MenuItem("CheckM", "Mana check").SetValue(new Slider(50, 0, 100)));
             Menu.SubMenu("Harass").AddItem(new MenuItem("HarassActive", "Harass").SetValue(new KeyBind("C".ToCharArray()[0], KeyBindType.Press)));
 
@@ -168,15 +168,14 @@ namespace RioSyndra
                       );
         }
 
-        private static void Harass(Obj_AI_Hero FTarget = null)
+        private static void Harass()
         {
             if (Player.Mana / Player.MaxMana * 100 < Menu.Item("CheckM").GetValue<Slider>().Value) return;
             UseSpells(Menu.Item("UseQH").GetValue<bool>(), //Q
                       Menu.Item("UseWH").GetValue<bool>(), //W
                       Menu.Item("UseEH").GetValue<bool>(), //E
-                      false,                              //R
-                      Menu.Item("UseEQH").GetValue<bool>(), //EQ 
-                      FTarget //Forcus target
+                      false,                               //R
+                      Menu.Item("UseEQH").GetValue<bool>() //EQ 
                       );
         }
 
@@ -184,17 +183,19 @@ namespace RioSyndra
         {   
             //Last cast time of spells
             if (sender.IsMe)
-                switch (args.SData.Name.ToString())
-                {
-                    case "SyndraQ": Q.LastCastAttemptT = Environment.TickCount; break;
-                    case "SyndraW": case "syndrawcast": W.LastCastAttemptT = Environment.TickCount; break;
-                    case "SyndraE": case "syndrae5": E.LastCastAttemptT = Environment.TickCount; break;
-                }
+            {
+                if (args.SData.Name.ToString() == "SyndraQ")
+                    Q.LastCastAttemptT = Environment.TickCount;
+                if (args.SData.Name.ToString() == "SyndraW" || args.SData.Name.ToString() == "syndrawcast")
+                    W.LastCastAttemptT = Environment.TickCount;
+                if (args.SData.Name.ToString() == "SyndraE" || args.SData.Name.ToString() == "syndrae5")
+                    E.LastCastAttemptT = Environment.TickCount;
+            }
             
             //Harass when enemy do attack
-            if (Menu.Item("HarassAA").GetValue<bool>() && sender.Type == Player.Type && sender.Team != Player.Team && args.SData.Name.ToLower().Contains("attack") && Player.Distance(sender, true) <= Math.Pow(EQ.Range, 2))  
+            if (Menu.Item("HarassAAQ").GetValue<bool>() && sender.Type == Player.Type && sender.Team != Player.Team && args.SData.Name.ToLower().Contains("attack") && Player.Distance(sender, true) <= Math.Pow(Q.Range, 2) && Player.Mana / Player.MaxMana * 100 > Menu.Item("CheckM").GetValue<Slider>().Value)  
             {
-                Harass((Obj_AI_Hero)sender);
+                UseQ((Obj_AI_Hero)sender);
             }
         }
         
@@ -210,7 +211,7 @@ namespace RioSyndra
                     UseEQ((Obj_AI_Hero)gapcloser.Sender);
                 }
                 else
-                    E.Cast(gapcloser.End, true);
+                    E.Cast(gapcloser.End);
             }
         }
 
@@ -224,7 +225,7 @@ namespace RioSyndra
                 if (Q.IsReady())
                     UseEQ((Obj_AI_Hero)unit);
                 else
-                    E.Cast(unit, true);
+                    E.Cast(unit);
             }
             else if (Q.IsReady() && E.IsReady() && Player.Distance(unit, true) <= Math.Pow(EQ.Range, 2))
                 UseEQ((Obj_AI_Hero)unit);
@@ -236,33 +237,44 @@ namespace RioSyndra
                 args.Process = !Q.IsReady() && (!W.IsReady() || !E.IsReady());
         }
 
-        private static float ComboDamage(Obj_AI_Hero Target, bool UQ, bool UW, bool UE, bool UR)
+        private static float GetComboDamage(Obj_AI_Hero enemy, bool UQ, bool UW, bool UE, bool UR)
         {
             var damage = 0d;
 
             //Add damage Q
-            if (Q.IsReady() && UQ) damage += Player.GetSpellDamage(Target, SpellSlot.Q);
+            if (Q.IsReady() && UQ) damage += Player.GetSpellDamage(enemy, SpellSlot.Q);
+
             //Add damage W
-            if (W.IsReady() && UW) damage += Player.GetSpellDamage(Target, SpellSlot.W);
+            if (W.IsReady() && UW) damage += Player.GetSpellDamage(enemy, SpellSlot.W);
 
             //Add damage E
-            if (E.IsReady() && UE) damage += Player.GetSpellDamage(Target, SpellSlot.E);
+            if (E.IsReady() && UE) damage += Player.GetSpellDamage(enemy, SpellSlot.E);
 
             //Add damage R
-            if (R.IsReady() && UR) damage += Player.GetSpellDamage(Target, SpellSlot.R) * (DFG.IsReady() ? 1.2 : 1);
+            if (R.IsReady() && UR) damage += GetRDamage(enemy);
 
-            //Add Ignite damage
-            if (IgniteSlot != SpellSlot.Unknown && Player.SummonerSpellbook.CanUseSpell(IgniteSlot) == SpellState.Ready && Player.Distance(Target, true) <= 600 * 600)
-                damage += ObjectManager.Player.GetSummonerSpellDamage(Target, Damage.SummonerSpell.Ignite);
+            //Add damage DFG
+            if (DFG.IsReady()) damage += Player.GetItemDamage(enemy, Damage.DamageItems.Dfg) / 1.2;
 
-            return (float)(DFG.IsReady() ? damage + Player.GetItemDamage(Target, Damage.DamageItems.Dfg) : damage);
+            return (float)((DFG.IsReady() || DFGBuff(enemy)) ? damage * 1.2 : damage);
         }
 
-        private static float RDamage(Obj_AI_Hero enemy, bool DFGUsed)
+        private static float GetRDamage(Obj_AI_Hero enemy)
         {
             if (!R.IsReady()) return 0f;
+            float damage = 45 + R.Level * 45 + Player.FlatMagicDamageMod * 0.2f; 
+            return (float)Player.CalcDamage(enemy, Damage.DamageType.Magical, damage) * Player.Spellbook.GetSpell(SpellSlot.R).Ammo;
+        }
 
-            return (float)(Player.GetSpellDamage(enemy, SpellSlot.R) * (DFGUsed ? 1.2 : 1));
+        private static float GetIgniteDamage(Obj_AI_Hero enemy)
+        {
+            if (IgniteSlot == SpellSlot.Unknown || Player.SummonerSpellbook.CanUseSpell(IgniteSlot) != SpellState.Ready) return 0f;
+            return (float)Player.GetSummonerSpellDamage(enemy, Damage.SummonerSpell.Ignite);
+        }
+
+        private static bool DFGBuff(Obj_AI_Hero enemy)
+        {
+            return (enemy.HasBuff("deathfiregraspspell", true) || enemy.HasBuff("itemblackfiretorchspell", true)) ? true : false;
         }
        
         //Check R Over skill
@@ -282,39 +294,21 @@ namespace RioSyndra
             else return true;  
         }
 
-        private static void UseSpells(bool UQ, bool UW, bool UE, bool UR, bool UEQ, Obj_AI_Hero FTarget = null)
+        private static void UseSpells(bool UQ, bool UW, bool UE, bool UR, bool UEQ)
         {   
             //Set Target
-            Obj_AI_Hero QTarget = null;
-            Obj_AI_Hero WTarget = null;
-            Obj_AI_Hero EQTarget = null;
-
-            if (FTarget != null && !Menu.Item("ComboActive").GetValue<KeyBind>().Active)
-            {
-                if (Player.Distance(FTarget, true) <= Math.Pow(Q.Range, 2))
-                    QTarget = FTarget;
-                if (Player.Distance(FTarget, true) <= Math.Pow(W.Range, 2))
-                    WTarget = FTarget;
-                if (Player.Distance(FTarget, true) <= Math.Pow(EQ.Range, 2))
-                    EQTarget = FTarget;
-            }
-            else
-            {
-                QTarget = SimpleTs.GetTarget(Q.Range, SimpleTs.DamageType.Magical);
-                WTarget = SimpleTs.GetTarget(W.Range, SimpleTs.DamageType.Magical);
-                EQTarget = SimpleTs.GetTarget(EQ.Range, SimpleTs.DamageType.Magical);
-            }
+            Obj_AI_Hero QTarget = SimpleTs.GetTarget(Q.Range + 25f, SimpleTs.DamageType.Magical);
+            Obj_AI_Hero WTarget = SimpleTs.GetTarget(W.Range + 25f, SimpleTs.DamageType.Magical);
+            Obj_AI_Hero EQTarget = SimpleTs.GetTarget(EQ.Range, SimpleTs.DamageType.Magical);
 
             //Use Q
-            if (UQ && QTarget != null && Q.IsReady())
+            if (UQ && QTarget != null)
             {
-                var Pos = Q.GetPrediction(QTarget, true);
-                if (Pos.Hitchance >= HitChance.High)
-                    Q.Cast(Pos.CastPosition, true);
+                UseQ(QTarget);
             }
 
             //Use E
-            if (UE &&E.IsReady())
+            if (UE && E.IsReady())
                 foreach (var enemy in ObjectManager.Get<Obj_AI_Hero>().Where(enemy => enemy.Team != Player.Team))
                 {
                     if (Player.Distance(enemy, true) <= Math.Pow(EQ.Range, 2) && Environment.TickCount - EQ.LastCastAttemptT > 600) 
@@ -328,47 +322,51 @@ namespace RioSyndra
             //Use W1
             if (UW && EQTarget != null && W.IsReady() && Player.Spellbook.GetSpell(SpellSlot.W).ToggleState == 1 )
             {
-                var gObjectPos = OrbManager.GetOrbToGrab((int)(W.Range));
+                Vector3 gObjectPos = OrbManager.GetOrbToGrab((int)(W.Range));
 
                 if (gObjectPos.To2D().IsValid() && Environment.TickCount - Q.LastCastAttemptT > 600 + Game.Ping && Environment.TickCount - E.LastCastAttemptT > 600 + Game.Ping && Environment.TickCount - W.LastCastAttemptT > 600 + Game.Ping)
                 {
-                    W.Cast(gObjectPos, true);
+                    W.Cast(gObjectPos);
                 }
             }
 
             //Use W2
-            if (UW && W.IsReady() && Player.Spellbook.GetSpell(SpellSlot.W).ToggleState != 1 && WTarget != null && !(OrbManager.WObject(false).Name.ToLower() == "heimertblue"))
+            if (UW && W.IsReady() && Player.Spellbook.GetSpell(SpellSlot.W).ToggleState != 1 && EQTarget != null && !(OrbManager.WObject(false).Name.ToLower() == "heimertblue"))
             {
                 W.UpdateSourcePosition(OrbManager.WObject(false).ServerPosition);
-                var Pos = W.GetPrediction(WTarget, true);
+                PredictionOutput Pos = W.GetPrediction(WTarget, true);
                 if (Pos.Hitchance >= HitChance.High)
-                    W.Cast(Pos.CastPosition, true);
+                    W.Cast(Pos.CastPosition);
             }
 
             //DFG, R, Ignite 
             foreach (var enemy in ObjectManager.Get<Obj_AI_Hero>().Where(enemy => enemy.Team != Player.Team))
                 if (!enemy.HasBuff("UndyingRage") && !enemy.HasBuff("JudicatorIntervention"))
                 {
-                    if (ComboDamage(enemy, UQ, UW, UE, UR) >= enemy.Health)
+                    if (GetComboDamage(enemy, UQ, UW, UE, UR) + GetIgniteDamage(enemy) > enemy.Health)
                     {   
-                        bool UseDFG = false;
                         //DFG
                         if (DFG.IsReady() && Player.Distance(enemy, true) <= Math.Pow(DFG.Range, 2))
-                        {
                             DFG.Cast(enemy);
-                            UseDFG = true;
-                        }
-
-                        var UseR = Menu.Item("DontR" + enemy.BaseSkinName) != null && Menu.Item("DontR" + enemy.BaseSkinName).GetValue<bool>() == false && UR;
+    
                         //R
-                        if (UseR && R.IsReady() && Player.Distance(enemy, true) <= Math.Pow(R.Range, 2) && RDamage(enemy, UseDFG) >= enemy.Health && RCheck(enemy))
-                            R.Cast(enemy);
+                        bool UseR = Menu.Item("DontR" + enemy.BaseSkinName) != null && Menu.Item("DontR" + enemy.BaseSkinName).GetValue<bool>() == false && UR;
+                        if (UseR && R.IsReady() && Player.Distance(enemy, true) <= Math.Pow(R.Range, 2) && (DFGBuff(enemy) ? GetRDamage(enemy) * 1.2 : GetRDamage(enemy)) > enemy.Health && RCheck(enemy))
+                            R.CastOnUnit(enemy);
                     }
                     
                     //Ignite
-                    if (Player.SummonerSpellbook.CanUseSpell(IgniteSlot) == SpellState.Ready && Player.Distance(enemy, true) <= 600 * 600 && Player.GetSummonerSpellDamage(enemy, Damage.SummonerSpell.Ignite) >= enemy.Health)
+                    if (Player.Distance(enemy, true) <= 600 * 600 && GetIgniteDamage(enemy) > enemy.Health)
                         Player.SummonerSpellbook.CastSpell(IgniteSlot, enemy);  
                 }
+        }
+
+        private static void UseQ(Obj_AI_Hero Target)
+        {
+            if (!Q.IsReady()) return;
+            PredictionOutput Pos = Q.GetPrediction(Target, true);
+            if (Pos.Hitchance >= HitChance.High)
+                Q.Cast(Pos.CastPosition);
         }
 
 
@@ -382,7 +380,7 @@ namespace RioSyndra
                     EQ.UpdateSourcePosition(orb);
                     var PPo = EQ.GetPrediction(Target).UnitPosition.To2D();
                     if (PPo.Distance(SP, EP, true, true) <= Math.Pow(EQ.Width + Target.BoundingRadius, 2))
-                        E.Cast(orb, true);                
+                        E.Cast(orb);                
                 }
         }
 
@@ -398,16 +396,6 @@ namespace RioSyndra
                 if (TPos.Hitchance >= HitChance.High)
                 {
                     Vector3 Pos = Player.ServerPosition + Vector3.Normalize(TPos.UnitPosition - Player.ServerPosition) * 700;
-                    UseEQ2(Target, Pos);
-                }
-            }
-            else if (Player.Distance(SPos, true) > 90 * 90)
-            {
-                Q.Width = 60f;
-                var TPos = Q.GetPrediction(Target);
-                if (TPos.Hitchance >= HitChance.High)
-                {
-                    Vector3 Pos = Player.Position + Vector3.Normalize(TPos.UnitPosition - Player.ServerPosition) * (Player.Distance(TPos.UnitPosition) - 80);
                     UseEQ2(Target, Pos);
                 }
             }
@@ -435,10 +423,10 @@ namespace RioSyndra
                 var PPo = EQ.GetPrediction(Target).UnitPosition.To2D().ProjectOn(SP.To2D(), EP.To2D());
                 if (PPo.IsOnSegment && PPo.SegmentPoint.Distance(Target, true) <= Math.Pow(EQ.Width + Target.BoundingRadius, 2))
                 {
-                    int Delay = 280 - (int)(Player.Distance(Pos) / 2.5) * 1000 + Menu.Item("EQDelay").GetValue<Slider>().Value;
-                    Utility.DelayAction.Add(Math.Max(0, Delay), () => E.Cast(Pos, true));
+                    int Delay = 280 - (int)(Player.Distance(Pos) / 2.5) + Menu.Item("EQDelay").GetValue<Slider>().Value;
+                    Utility.DelayAction.Add(Math.Max(0, Delay), () => E.Cast(Pos));
                     EQ.LastCastAttemptT = Environment.TickCount;
-                    Q.Cast(Pos, true);
+                    Q.Cast(Pos);
                 }
             }
         }
@@ -465,7 +453,7 @@ namespace RioSyndra
             if (Menu.Item("DrawEQC").GetValue<bool>())
                 if (Menu.Item("UseEQC").GetValue<KeyBind>().Active && E.IsReady() && Q.IsReady())
                     foreach (var enemy in ObjectManager.Get<Obj_AI_Hero>().Where(enemy => enemy.Team != Player.Team))
-                    Utility.DrawCircle(Game.CursorPos, 150f, (enemy.Distance(Game.CursorPos, true) <= 150 * 150) && enemy.IsEnemy ? Color.Red : Color.Green, 3);
+                    Utility.DrawCircle(Game.CursorPos, 150f, (enemy.Distance(Game.CursorPos, true) <= 150 * 150) ? Color.Red : Color.Green, 3);
         }
     }
 }
